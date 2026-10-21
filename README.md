@@ -24,7 +24,7 @@ For parameters `a`, `b`, `c`:
 
 $$
 \begin{aligned}
-x_{n+1}&=y_n-\operatorname{sign}(x_n)\sqrt{\lvert bx_n-c\rvert}\\
+x_{n+1}&=y_n-\mathrm{sign}(x_n)\sqrt{\lvert bx_n-c\rvert}\\
 y_{n+1}&=a-x_n
 \end{aligned}
 $$
@@ -33,7 +33,7 @@ Where it is differentiable, its Jacobian is
 
 $$
 J(x)=\begin{pmatrix}
--\dfrac{b\operatorname{sign}(x)\operatorname{sign}(bx-c)}{2\sqrt{\lvert bx-c\rvert}}&1\\
+-\dfrac{b\mathrm{sign}(x)\mathrm{sign}(bx-c)}{2\sqrt{\lvert bx-c\rvert}}&1\\
 -1&0
 \end{pmatrix}
 $$
