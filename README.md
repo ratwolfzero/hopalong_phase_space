@@ -6,8 +6,6 @@
 - **map:** a Lyapunov exponent for every starting point on a grid, classifying each as regular or chaotic
 - **portrait:** many orbits on a dark background, coloured by that classification (meant for looking at, not for measuring)
 
-A fourth option, **header**, renders a wide version of the portrait for use as a blog header.
-
 ![One orbit from (0,0)](hopalong_orbit.png)
 
 ![Lyapunov-exponent map](hopalong_lyapunov_map.png)
