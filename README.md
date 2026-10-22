@@ -26,17 +26,19 @@ For parameters `a`, `b`, `c`:
 
 $$
 \begin{aligned}
-x_{n+1}&=y_n-\operatorname{sign}(x_n)\sqrt{\lvert bx_n-c\rvert}\\
-y_{n+1}&=a-x_n
+x_{n+1} &= y_n - \mathrm{sgn}(x_n)\sqrt{|bx_n-c|} \\
+y_{n+1} &= a-x_n
 \end{aligned}
 $$
 
 Where it is differentiable, its Jacobian is
 
 $$
-J(x)=\begin{pmatrix}
--\dfrac{b\operatorname{sign}(x)\operatorname{sign}(bx-c)}{2\sqrt{\lvert bx-c\rvert}}&1\\
--1&0
+J(x)=
+\begin{pmatrix}
+-\dfrac{b\,\mathrm{sgn}(x)\,\mathrm{sgn}(bx-c)}
+{2\sqrt{|bx-c|}} & 1 \\
+-1 & 0
 \end{pmatrix}
 $$
 
@@ -61,7 +63,7 @@ so `a` and `b` behave like lengths and `c` like a length squared. Orbits scale w
 The fixed points (`y=a-x`) solve
 
 $$
-2x-a+\operatorname{sign}(x)\sqrt{\lvert bx-c\rvert}=0
+2x-a+\mathrm{sgn}(x)\sqrt{|bx-c|}=0
 $$
 
 Because `det J=1`, a fixed point is elliptic (the centre of an island) when the upper-left entry of `J` there has absolute value below 2, and hyperbolic otherwise.
