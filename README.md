@@ -138,13 +138,13 @@ The factor 3.8 was chosen so that the default parameters show the central struct
 
 **Orbit:** brightness is the log of how often the orbit visited each pixel. Black regions were never visited by this orbit.
 
-**Map**
+## Map
 
 - Left panel: colour is the finite-time exponent of the orbit that starts at that point. Dark means about 0, so regular. Bright means chaotic.
 - Right panel: the same data split at the threshold. Blue is regular, orange is chaotic, grey would mean the orbit escaped.
 - Large dark or blue blobs are islands of regular motion. The cross marks (0,0).
 
-**Portrait**
+## Portrait
 
 - Each colour is one orbit. Cool colours (cyan to magenta) are regular orbits and only encode the position of the starting point along the line, so they carry no measured value. Warm colours (yellow to red) are chaotic orbits, brighter for a larger exponent.
 - Nested rings are regular orbits circling an island. Dense warm bands are chaotic orbits filling the space between islands.
@@ -177,3 +177,18 @@ Visible in the portrait but not tested: a ring of seven large islands around the
 - Islands smaller than the grid spacing (about 0.013 at the defaults) are not resolved.
 - The square-root term has an unbounded derivative at `bx=c`. A floor of 1e-12 on the square root keeps the code finite, and smooth-map theory such as KAM is only an analogy here.
 - Orbits are computed in floating point. Exponents and fractions were checked only by varying N, threshold and window.
+
+[1]  
+**J. Lansdown and R. A. Earnshaw (eds.)**, *Computers in Art, Design and Animation*.  
+ New York: Springer-Verlag, 1989.  
+ e-ISBN-13: 978-1-4612-4538-4.  
+
+[2]  
+**Barry Martin**, "Graphic Potential of Recursive Functions," in *Computers in Art, Design and Animation* [1],  
+pp. 109–129.
+
+[3]  
+**A.K. Dewdney**, *Psychotapeten*, algorithm *HÜPFER*, in *Spektrum der Wissenschaft: Computer Kurzweil*.  
+Spektrum der Wissenschaft Verlagsgesellschaft mbH & Co., Heidelberg, 1988.  
+(German version of *Scientific American*).  
+ISBN-10: 3922508502, ISBN-13: 978-3922508502.
