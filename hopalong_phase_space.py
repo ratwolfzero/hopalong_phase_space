@@ -88,7 +88,8 @@ def lyapunov_orbit(a, b, c, x, y, n, skip):
     total = 0.0
     for i in range(n + skip):
         d = b * x - c
-        r = max(np.sqrt(abs(d)), 1e-12)               # guard the sqrt singularity
+        # guard the sqrt singularity
+        r = max(np.sqrt(abs(d)), 1e-12)
         dfdx = -np.sign(x) * b * np.sign(d) / (2.0 * r)
         x, y = y - np.sign(x) * np.sqrt(abs(d)), a - x
         vx, vy = dfdx * vx + vy, -vx                  # tangent vector * Jacobian
@@ -213,7 +214,8 @@ def fixed_points(a, b, c, n=40001):
 
     roots = []
     for lo, hi in ((-reach, 0.0), (0.0, reach)):     # f may jump at x = 0, so split there
-        xs = np.linspace(lo, hi, n)[1:-1] if lo == 0.0 else np.linspace(lo, hi, n)[:-1]
+        xs = np.linspace(lo, hi, n)[
+            1:-1] if lo == 0.0 else np.linspace(lo, hi, n)[:-1]
         if hi == 0.0:
             xs = xs[:-1]
         fx = f(xs)
@@ -230,7 +232,8 @@ def fixed_points(a, b, c, n=40001):
     for x in roots:
         d = b * x - c
         if d != 0.0:
-            out.append((x, a - x, -np.sign(x) * b * np.sign(d) / (2.0 * np.sqrt(abs(d)))))
+            out.append((x, a - x, -np.sign(x) * b *
+                       np.sign(d) / (2.0 * np.sqrt(abs(d)))))
     return out
 
 
@@ -242,7 +245,8 @@ def survey(params, args):
     scale = natural_scale(a, b, c)
 
     # exact box of the orbit from (0,0) over the full run (nothing is stored)
-    xmin, xmax, ymin, ymax, n_box = orbit_extent(a, b, c, args.iters, args.skip)
+    xmin, xmax, ymin, ymax, n_box = orbit_extent(
+        a, b, c, args.iters, args.skip)
     if n_box < 1000:
         return None
     box = (xmin, xmax, ymin, ymax)
@@ -252,23 +256,28 @@ def survey(params, args):
     w, h = box[1] - box[0], box[3] - box[2]
     hist_extent = (box[0] - pad * w - 1e-9, box[1] + pad * w + 1e-9,
                    box[2] - pad * h - 1e-9, box[3] + pad * h + 1e-9)
-    longest = int(np.clip(np.sqrt(args.iters / 12), 200, 1500)) if args.bins is None else args.bins
+    longest = int(np.clip(np.sqrt(args.iters / 12), 200, 1500)
+                  ) if args.bins is None else args.bins
     ww, hh = hist_extent[1] - hist_extent[0], hist_extent[3] - hist_extent[2]
-    bins = (max(int(longest * ww / max(ww, hh)), 50), max(int(longest * hh / max(ww, hh)), 50))
+    bins = (max(int(longest * ww / max(ww, hh)), 50),
+            max(int(longest * hh / max(ww, hh)), 50))
 
     # centre of the structure: the fixed point nearest the origin, elliptic if there is one
     fps = fixed_points(a, b, c)
     elliptic = [p for p in fps if abs(p[2]) < 2.0]
-    pool, kind = (elliptic, "elliptic fixed point") if elliptic else (fps, "hyperbolic fixed point")
+    pool, kind = (elliptic, "elliptic fixed point") if elliptic else (
+        fps, "hyperbolic fixed point")
     if pool:
         x_fp, y_fp, _ = min(pool, key=lambda p: p[0] ** 2 + p[1] ** 2)
         centre = (x_fp, y_fp)
     else:
-        centre, kind = ((box[0] + box[1]) / 2, (box[2] + box[3]) / 2), "centre of the orbit box (no fixed point)"
+        centre, kind = ((box[0] + box[1]) / 2, (box[2] + box[3]) /
+                        2), "centre of the orbit box (no fixed point)"
 
     # map window and portrait line, both in units of the length scale
     half = args.window_scale * scale
-    window = ((centre[0] - half, centre[0] + half), (centre[1] - half, centre[1] + half))
+    window = ((centre[0] - half, centre[0] + half),
+              (centre[1] - half, centre[1] + half))
     start = centre
     end = (centre[0] + 0.9 * half, centre[1] + 0.9 * half)
 
@@ -281,13 +290,16 @@ def report(layout):
     bx = layout.orbit_box
     (x0, x1), (y0, y1) = layout.window
     p0, p1 = layout.line
-    print(f"pass 1 (survey, {layout.survey_seconds:.1f}s, includes JIT compile on first run)")
+    print(
+        f"pass 1 (survey, {layout.survey_seconds:.1f}s, includes JIT compile on first run)")
     print(f"  length scale L = {layout.scale:.4g}  (max of |a|, |b|, sqrt|c|)")
-    print(f"  centre:           ({layout.centre[0]:.4g}, {layout.centre[1]:.4g})  [{layout.centre_kind}]")
+    print(
+        f"  centre:           ({layout.centre[0]:.4g}, {layout.centre[1]:.4g})  [{layout.centre_kind}]")
     print(f"  orbit from (0,0): x {bx[0]:.4g}..{bx[1]:.4g}, y {bx[2]:.4g}..{bx[3]:.4g} "
           f"({layout.survey_points:,} points)")
     print(f"  map window:       x {x0:.4g}..{x1:.4g}, y {y0:.4g}..{y1:.4g}")
-    print(f"  portrait line:    ({p0[0]:.4g}, {p0[1]:.4g}) -> ({p1[0]:.4g}, {p1[1]:.4g})")
+    print(
+        f"  portrait line:    ({p0[0]:.4g}, {p0[1]:.4g}) -> ({p1[0]:.4g}, {p1[1]:.4g})")
     print(f"  density image:    {layout.bins[0]} x {layout.bins[1]} bins")
 
 
@@ -388,12 +400,14 @@ def plot_portrait(params, line, n_orbits, n_points, lyap_iters, thresh, skip):
     ax.set_facecolor("black")
     n_ch, (x0, x1, y0, y1) = draw_portrait(ax, params, *line, n_orbits, n_points,
                                            lyap_iters, thresh, skip)
-    m = 0.03 * max(x1 - x0, y1 - y0)                 # exact limits of what was drawn
+    # exact limits of what was drawn
+    m = 0.03 * max(x1 - x0, y1 - y0)
     ax.set_xlim(x0 - m, x1 + m)
     ax.set_ylim(y0 - m, y1 + m)
     ax.set_aspect("equal")
     ax.axis("off")
-    print(f"portrait: {n_ch} of {n_orbits} orbits chaotic (threshold {thresh})")
+    print(
+        f"portrait: {n_ch} of {n_orbits} orbits chaotic (threshold {thresh})")
     return fig
 
 
@@ -402,14 +416,16 @@ def plot_header(params, line, n_orbits, n_points, lyap_iters, thresh, skip,
     """Wide image of the portrait with a black background and no margins."""
     width, height = size
     dpi = 100
-    fig = plt.figure(figsize=(width / dpi, height / dpi), dpi=dpi, facecolor="black")
+    fig = plt.figure(figsize=(width / dpi, height / dpi),
+                     dpi=dpi, facecolor="black")
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_facecolor("black")
     ax.axis("off")
     n_ch, (x0, x1, y0, y1) = draw_portrait(ax, params, *line, n_orbits, n_points,
                                            lyap_iters, thresh, skip)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    half_h = (y1 - y0) / 2 / zoom                     # zoom > 1 crops the sides
+    # zoom > 1 crops the sides
+    half_h = (y1 - y0) / 2 / zoom
     half_w = half_h * width / height
     ax.set_xlim(cx - half_w, cx + half_w)
     ax.set_ylim(cy - half_h, cy + half_h)
@@ -432,7 +448,8 @@ def parse_args(argv=None):
     g.add_argument("--which", default="all",
                    choices=["all", "orbit", "map", "portrait", "header"],
                    help="'all' = orbit, map and portrait (default); header is separate")
-    g.add_argument("--save", action="store_true", help="write PNG files instead of showing")
+    g.add_argument("--save", action="store_true",
+                   help="write PNG files instead of showing")
     g.add_argument("--outdir", default=".", help="folder for the PNG files")
     g.add_argument("--survey-only", action="store_true",
                    help="run pass 1 only: print the extents and exit")
@@ -444,8 +461,10 @@ def parse_args(argv=None):
                    help="density image pixels on the longer side (default: from --iters)")
     g.add_argument("--lyap-iters", type=int, default=8000,
                    help="iterations per orbit for the Lyapunov map")
-    g.add_argument("--grid", type=int, default=400, help="grid points per axis")
-    g.add_argument("--skip", type=int, default=500, help="discarded transient steps")
+    g.add_argument("--grid", type=int, default=400,
+                   help="grid points per axis")
+    g.add_argument("--skip", type=int, default=500,
+                   help="discarded transient steps")
     g.add_argument("--thresh", type=float, default=0.004,
                    help="exponent above which an orbit counts as chaotic")
 
@@ -457,8 +476,10 @@ def parse_args(argv=None):
     g = p.add_argument_group("overrides (automatic by default)")
     g.add_argument("--xlim", type=float, nargs=2, help="x window of the map")
     g.add_argument("--ylim", type=float, nargs=2, help="y window of the map")
-    g.add_argument("--start", type=float, nargs=2, help="portrait line: first start point")
-    g.add_argument("--end", type=float, nargs=2, help="portrait line: last start point")
+    g.add_argument("--start", type=float, nargs=2,
+                   help="portrait line: first start point")
+    g.add_argument("--end", type=float, nargs=2,
+                   help="portrait line: last start point")
 
     g = p.add_argument_group("portrait and header")
     g.add_argument("--portrait-orbits", type=int, default=150)
@@ -487,7 +508,8 @@ def finish(fig, name, args):
 def main(argv=None):
     args = parse_args(argv)
     params = (args.a, args.b, args.c)
-    wanted = {"all": ["orbit", "map", "portrait"]}.get(args.which, [args.which])
+    wanted = {"all": ["orbit", "map", "portrait"]}.get(args.which, [
+                                                       args.which])
 
     # ---- pass 1: extents ----
     layout = survey(params, args)
