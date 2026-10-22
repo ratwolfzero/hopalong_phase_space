@@ -14,6 +14,21 @@ script produces three views of the same map:
     portrait  many orbits from a line of starting points, coloured by that test
     header    a wide (16:9) version of the portrait, e.g. for a blog header
 
+The run has two passes:
+
+    pass 1 (survey, about a second)  finds the extents: the natural length scale
+        L of the parameters, the centre of the structure (the map's fixed
+        point), the box of the orbit from (0,0), the plot window of the map,
+        a line of starting points for the portrait and the range and resolution
+        of the density image
+    pass 2 (render)  draws the views with those extents, so the framing follows
+        a, b, c and the number of points without manual tuning
+
+The map keeps its form under (x, y, a, b, c) -> (s*x, s*y, s*a, s*b, s*s*c), so
+the framing is built from the length scale L = max(|a|, |b|, sqrt|c|) and
+scales exactly with it. The extent of the orbit from (0,0) is measured over the
+full run, because it can grow when the run is long enough.
+
 The numerical loops run in numba; plotting uses matplotlib.
 
 Usage:
@@ -22,11 +37,13 @@ Usage:
     python hopalong_phase_space.py --which map --grid 800 --lyap-iters 20000 --save
     python hopalong_phase_space.py --a 1.1 --b 0.5 --c 0.3 --iters 2000000
     python hopalong_phase_space.py --which header --save
+    python hopalong_phase_space.py --a 2 --b 1 --survey-only    # pass 1 only
 """
 import argparse
 import os
 import sys
 import time
+from dataclasses import dataclass
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -94,51 +111,199 @@ def lyapunov_grid(a, b, c, xs, ys, n, skip):
     return out
 
 
+@njit(cache=True)
+def orbit_density(a, b, c, n, skip, xlo, xhi, ylo, yhi, nbx, nby):
+    """Density histogram and exponent of the orbit from (0,0), in one pass.
+
+    The histogram is filled while the orbit runs, so no point is stored and
+    the memory use does not depend on n. Returns (counts[nby, nbx], exponent,
+    points counted, points outside the histogram range)."""
+    H = np.zeros((nby, nbx), dtype=np.int64)
+    sx = nbx / (xhi - xlo)
+    sy = nby / (yhi - ylo)
+    x, y = 0.0, 0.0
+    vx, vy = 1.0, 0.0
+    total = 0.0
+    count = 0
+    outside = 0
+    for i in range(n + skip):
+        d = b * x - c
+        sg = np.sign(x)
+        r = max(np.sqrt(abs(d)), 1e-12)
+        dfdx = -sg * b * np.sign(d) / (2.0 * r)
+        x, y = y - sg * np.sqrt(abs(d)), a - x
+        vx, vy = dfdx * vx + vy, -vx
+        nrm = np.sqrt(vx * vx + vy * vy)
+        vx, vy = vx / nrm, vy / nrm
+        if abs(x) > ESCAPE or abs(y) > ESCAPE:
+            break
+        if i >= skip:
+            total += np.log(nrm)
+            count += 1
+            ix = int((x - xlo) * sx)
+            iy = int((y - ylo) * sy)
+            if 0 <= ix < nbx and 0 <= iy < nby:
+                H[iy, ix] += 1
+            else:
+                outside += 1
+    lam = total / count if count > 0 else np.nan
+    return H, lam, count, outside
+
+
+@njit(cache=True)
+def orbit_extent(a, b, c, n, skip):
+    """Exact bounding box of the orbit from (0,0) over n points, without storing it.
+
+    Returns (xmin, xmax, ymin, ymax, points counted)."""
+    x = y = 0.0
+    xmin = ymin = 1e300
+    xmax = ymax = -1e300
+    count = 0
+    for i in range(n + skip):
+        x, y = y - np.sign(x) * np.sqrt(abs(b * x - c)), a - x
+        if abs(x) > ESCAPE or abs(y) > ESCAPE:
+            break
+        if i >= skip:
+            count += 1
+            xmin = min(xmin, x)
+            xmax = max(xmax, x)
+            ymin = min(ymin, y)
+            ymax = max(ymax, y)
+    return xmin, xmax, ymin, ymax, count
+
+
 # --------------------------------------------------------------------------
-# geometry helpers
+# pass 1: survey
 # --------------------------------------------------------------------------
-def orbit_box(xs, ys, min_half=0.5):
-    """Centre and half-widths of the box around the orbit."""
-    cx, cy = (xs.min() + xs.max()) / 2, (ys.min() + ys.max()) / 2
-    hx = max((xs.max() - xs.min()) / 2, min_half)
-    hy = max((ys.max() - ys.min()) / 2, min_half)
-    return cx, cy, hx, hy
+@dataclass
+class Layout:
+    """Everything pass 1 determines."""
+    scale: float            # natural length scale L = max(|a|, |b|, sqrt|c|)
+    centre: tuple           # centre of the structure (x, y)
+    centre_kind: str        # how the centre was found
+    orbit_box: tuple        # (xmin, xmax, ymin, ymax) of the orbit from (0,0)
+    hist_extent: tuple      # (xlo, xhi, ylo, yhi) of the density image
+    bins: tuple             # (nbx, nby) of the density image
+    window: tuple           # ((x_lo, x_hi), (y_lo, y_hi)) of the Lyapunov map
+    line: tuple             # ((x, y), (x, y)) starting points of the portrait
+    survey_points: int      # points counted in the orbit box
+    survey_seconds: float = 0.0
 
 
-def default_window(box, scale):
-    """Plot window: the orbit's box, enlarged by `scale` about its centre."""
-    cx, cy, hx, hy = box
-    return (cx - scale * hx, cx + scale * hx), (cy - scale * hy, cy + scale * hy)
+def natural_scale(a, b, c):
+    """Length scale of the map.
+
+    The map keeps its form under (x, y, a, b, c) -> (s*x, s*y, s*a, s*b, s*s*c),
+    so a and b behave like lengths and c like a length squared. Orbits scale
+    with L, and the Lyapunov exponent does not change at all."""
+    scale = max(abs(a), abs(b), np.sqrt(abs(c)))
+    return scale if scale > 0 else 1.0
 
 
-LINE_START = (0.45, -0.45)   # in units of the orbit box half-widths, from its centre
-LINE_END = (2.8, 1.95)
+def fixed_points(a, b, c, n=40001):
+    """Real fixed points of the map as (x, y, trace) triples.
+
+    They solve 2x - a + sign(x)*sqrt(|b*x - c|) = 0 with y = a - x. The Jacobian
+    has determinant 1, so a point is elliptic (stable, the centre of an island)
+    when |trace| < 2 and hyperbolic otherwise."""
+    reach = 10.0 * natural_scale(a, b, c)
+
+    def f(x):
+        return 2.0 * x - a + np.sign(x) * np.sqrt(np.abs(b * x - c))
+
+    roots = []
+    for lo, hi in ((-reach, 0.0), (0.0, reach)):     # f may jump at x = 0, so split there
+        xs = np.linspace(lo, hi, n)[1:-1] if lo == 0.0 else np.linspace(lo, hi, n)[:-1]
+        if hi == 0.0:
+            xs = xs[:-1]
+        fx = f(xs)
+        for k in np.nonzero(np.sign(fx[:-1]) * np.sign(fx[1:]) < 0)[0]:
+            left, right = xs[k], xs[k + 1]
+            for _ in range(80):                       # bisection
+                mid = 0.5 * (left + right)
+                if np.sign(f(mid)) == np.sign(f(left)):
+                    left = mid
+                else:
+                    right = mid
+            roots.append(0.5 * (left + right))
+    out = []
+    for x in roots:
+        d = b * x - c
+        if d != 0.0:
+            out.append((x, a - x, -np.sign(x) * b * np.sign(d) / (2.0 * np.sqrt(abs(d)))))
+    return out
 
 
-def default_line(box):
-    """Line of starting points for the portrait, placed relative to the orbit box.
+def survey(params, args):
+    """Pass 1: find the extents of all views. Returns a Layout, or None if the
+    orbit from (0,0) escapes."""
+    a, b, c = params
+    t0 = time.time()
+    scale = natural_scale(a, b, c)
 
-    The offsets were chosen by eye so the line crosses several islands for the
-    default parameters. For other parameters it is only a reasonable guess:
-    use --start and --end to place it yourself."""
-    cx, cy, hx, hy = box
-    return ((cx + LINE_START[0] * hx, cy + LINE_START[1] * hy),
-            (cx + LINE_END[0] * hx, cy + LINE_END[1] * hy))
+    # exact box of the orbit from (0,0) over the full run (nothing is stored)
+    xmin, xmax, ymin, ymax, n_box = orbit_extent(a, b, c, args.iters, args.skip)
+    if n_box < 1000:
+        return None
+    box = (xmin, xmax, ymin, ymax)
+
+    # density image range: the box itself, so every point falls inside
+    pad = 1e-6
+    w, h = box[1] - box[0], box[3] - box[2]
+    hist_extent = (box[0] - pad * w - 1e-9, box[1] + pad * w + 1e-9,
+                   box[2] - pad * h - 1e-9, box[3] + pad * h + 1e-9)
+    longest = int(np.clip(np.sqrt(args.iters / 12), 200, 1500)) if args.bins is None else args.bins
+    ww, hh = hist_extent[1] - hist_extent[0], hist_extent[3] - hist_extent[2]
+    bins = (max(int(longest * ww / max(ww, hh)), 50), max(int(longest * hh / max(ww, hh)), 50))
+
+    # centre of the structure: the fixed point nearest the origin, elliptic if there is one
+    fps = fixed_points(a, b, c)
+    elliptic = [p for p in fps if abs(p[2]) < 2.0]
+    pool, kind = (elliptic, "elliptic fixed point") if elliptic else (fps, "hyperbolic fixed point")
+    if pool:
+        x_fp, y_fp, _ = min(pool, key=lambda p: p[0] ** 2 + p[1] ** 2)
+        centre = (x_fp, y_fp)
+    else:
+        centre, kind = ((box[0] + box[1]) / 2, (box[2] + box[3]) / 2), "centre of the orbit box (no fixed point)"
+
+    # map window and portrait line, both in units of the length scale
+    half = args.window_scale * scale
+    window = ((centre[0] - half, centre[0] + half), (centre[1] - half, centre[1] + half))
+    start = centre
+    end = (centre[0] + 0.9 * half, centre[1] + 0.9 * half)
+
+    return Layout(scale, centre, kind, box, hist_extent, bins, window, (start, end),
+                  n_box, time.time() - t0)
+
+
+def report(layout):
+    """Print what pass 1 found."""
+    bx = layout.orbit_box
+    (x0, x1), (y0, y1) = layout.window
+    p0, p1 = layout.line
+    print(f"pass 1 (survey, {layout.survey_seconds:.1f}s, includes JIT compile on first run)")
+    print(f"  length scale L = {layout.scale:.4g}  (max of |a|, |b|, sqrt|c|)")
+    print(f"  centre:           ({layout.centre[0]:.4g}, {layout.centre[1]:.4g})  [{layout.centre_kind}]")
+    print(f"  orbit from (0,0): x {bx[0]:.4g}..{bx[1]:.4g}, y {bx[2]:.4g}..{bx[3]:.4g} "
+          f"({layout.survey_points:,} points)")
+    print(f"  map window:       x {x0:.4g}..{x1:.4g}, y {y0:.4g}..{y1:.4g}")
+    print(f"  portrait line:    ({p0[0]:.4g}, {p0[1]:.4g}) -> ({p1[0]:.4g}, {p1[1]:.4g})")
+    print(f"  density image:    {layout.bins[0]} x {layout.bins[1]} bins")
 
 
 # --------------------------------------------------------------------------
-# figures
+# pass 2: figures
 # --------------------------------------------------------------------------
-def plot_orbit(xs, ys, params, lam):
+def plot_orbit(H, extent, params, lam, n_points, outside):
     """Density image of one orbit: the classic Hopalong picture."""
     a, b, c = params
-    H, xe, ye = np.histogram2d(xs, ys, bins=900)
     fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
-    ax.imshow(np.log1p(H.T), origin="lower", cmap="magma",
-              extent=[xe[0], xe[-1], ye[0], ye[-1]])
+    ax.imshow(np.log1p(H), origin="lower", cmap="magma",
+              extent=[extent[0], extent[1], extent[2], extent[3]])
     ax.set_aspect("equal")
+    note = f", {outside:,} outside range" if outside else ""
     ax.set_title(f"One orbit from (0,0): a={a}, b={b}, c={c}\n"
-                 f"{len(xs):,} points, Lyapunov exponent ≈ {lam:.4f}")
+                 f"{n_points:,} points{note}, Lyapunov exponent ≈ {lam:.4f}")
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     return fig
@@ -221,8 +386,11 @@ def draw_portrait(ax, params, p0, p1, n_orbits, n_points, lyap_iters, thresh, sk
 def plot_portrait(params, line, n_orbits, n_points, lyap_iters, thresh, skip):
     fig, ax = plt.subplots(figsize=(10, 10), facecolor="black")
     ax.set_facecolor("black")
-    n_ch, _ = draw_portrait(ax, params, *line, n_orbits, n_points,
-                            lyap_iters, thresh, skip)
+    n_ch, (x0, x1, y0, y1) = draw_portrait(ax, params, *line, n_orbits, n_points,
+                                           lyap_iters, thresh, skip)
+    m = 0.03 * max(x1 - x0, y1 - y0)                 # exact limits of what was drawn
+    ax.set_xlim(x0 - m, x1 + m)
+    ax.set_ylim(y0 - m, y1 + m)
     ax.set_aspect("equal")
     ax.axis("off")
     print(f"portrait: {n_ch} of {n_orbits} orbits chaotic (threshold {thresh})")
@@ -266,10 +434,14 @@ def parse_args(argv=None):
                    help="'all' = orbit, map and portrait (default); header is separate")
     g.add_argument("--save", action="store_true", help="write PNG files instead of showing")
     g.add_argument("--outdir", default=".", help="folder for the PNG files")
+    g.add_argument("--survey-only", action="store_true",
+                   help="run pass 1 only: print the extents and exit")
 
     g = p.add_argument_group("iterations and resolution")
     g.add_argument("--iters", type=int, default=10_000_000,
-                   help="points of the single orbit from (0,0)")
+                   help="points of the single orbit from (0,0); memory use does not depend on it")
+    g.add_argument("--bins", type=int,
+                   help="density image pixels on the longer side (default: from --iters)")
     g.add_argument("--lyap-iters", type=int, default=8000,
                    help="iterations per orbit for the Lyapunov map")
     g.add_argument("--grid", type=int, default=400, help="grid points per axis")
@@ -277,18 +449,21 @@ def parse_args(argv=None):
     g.add_argument("--thresh", type=float, default=0.004,
                    help="exponent above which an orbit counts as chaotic")
 
-    g = p.add_argument_group("window and portrait line (automatic by default)")
-    g.add_argument("--window-scale", type=float, default=3.0,
-                   help="plot window = orbit box from (0,0) enlarged by this factor")
-    g.add_argument("--xlim", type=float, nargs=2, help="override x window of the map")
-    g.add_argument("--ylim", type=float, nargs=2, help="override y window of the map")
+    g = p.add_argument_group("map window")
+    g.add_argument("--window-scale", type=float, default=3.8,
+                   help="map window half-size in units of the length scale L, "
+                        "centred on the fixed point")
+
+    g = p.add_argument_group("overrides (automatic by default)")
+    g.add_argument("--xlim", type=float, nargs=2, help="x window of the map")
+    g.add_argument("--ylim", type=float, nargs=2, help="y window of the map")
     g.add_argument("--start", type=float, nargs=2, help="portrait line: first start point")
     g.add_argument("--end", type=float, nargs=2, help="portrait line: last start point")
+
+    g = p.add_argument_group("portrait and header")
     g.add_argument("--portrait-orbits", type=int, default=150)
     g.add_argument("--portrait-iters", type=int, default=30000,
                    help="points drawn per portrait orbit")
-
-    g = p.add_argument_group("header image")
     g.add_argument("--header-size", type=int, nargs=2, default=(1600, 900),
                    metavar=("W", "H"), help="pixels (default 1600 900)")
     g.add_argument("--header-zoom", type=float, default=1.4,
@@ -314,28 +489,36 @@ def main(argv=None):
     params = (args.a, args.b, args.c)
     wanted = {"all": ["orbit", "map", "portrait"]}.get(args.which, [args.which])
 
-    # the orbit from (0,0) frames everything else, so compute it first
-    t0 = time.time()
-    xs, ys = orbit(*params, args.iters, 0.0, 0.0, args.skip)
-    if len(xs) < 1000:
-        sys.exit(f"The orbit from (0,0) escaped to infinity after {len(xs)} points "
+    # ---- pass 1: extents ----
+    layout = survey(params, args)
+    if layout is None:
+        sys.exit(f"The orbit from (0,0) escaped to infinity within 1000 points "
                  f"for a,b,c = {params}. Try other parameters.")
-    lam0 = lyapunov_orbit(*params, 0.0, 0.0, args.iters, args.skip)
-    print(f"orbit from (0,0): {len(xs):,} points, exponent {lam0:.4f} "
-          f"({time.time() - t0:.1f}s, includes JIT compile on first run)")
-
-    box = orbit_box(xs, ys)
-    window = default_window(box, args.window_scale)
+    window = layout.window
     if args.xlim:
         window = (tuple(args.xlim), window[1])
     if args.ylim:
         window = (window[0], tuple(args.ylim))
-    p0, p1 = default_line(box)
-    line = (tuple(args.start) if args.start else p0, tuple(args.end) if args.end else p1)
+    line = (tuple(args.start) if args.start else layout.line[0],
+            tuple(args.end) if args.end else layout.line[1])
+    layout.window, layout.line = window, line
+    report(layout)
+    if args.survey_only:
+        return
 
+    # ---- pass 2: render ----
     figs = {}
+    lam0 = None
     if "orbit" in wanted:
-        figs["hopalong_orbit.png"] = plot_orbit(xs, ys, params, lam0)
+        t0 = time.time()
+        H, lam0, n_pts, outside = orbit_density(*params, args.iters, args.skip,
+                                                *layout.hist_extent, *layout.bins)
+        print(f"orbit from (0,0): {n_pts:,} points, exponent {lam0:.4f}, "
+              f"{outside:,} outside the pass-1 range ({time.time() - t0:.1f}s)")
+        figs["hopalong_orbit.png"] = plot_orbit(H, layout.hist_extent, params, lam0,
+                                                n_pts, outside)
+    elif "map" in wanted:
+        lam0 = lyapunov_orbit(*params, 0.0, 0.0, args.iters, args.skip)
 
     if "map" in wanted:
         t0 = time.time()
@@ -344,8 +527,7 @@ def main(argv=None):
         L = lyapunov_grid(*params, gx, gy, args.lyap_iters, args.skip)
         ok = np.isfinite(L)
         print(f"map: {args.grid}x{args.grid} orbits x {args.lyap_iters:,} iterations "
-              f"in {time.time() - t0:.1f}s | window x {window[0][0]:.2f}..{window[0][1]:.2f}, "
-              f"y {window[1][0]:.2f}..{window[1][1]:.2f}")
+              f"in {time.time() - t0:.1f}s")
         print(f"map: regular {(ok & (L <= args.thresh)).mean():.1%}  "
               f"chaotic {(L > args.thresh).mean():.1%}  escaped {(~ok).mean():.1%}")
         figs["hopalong_lyapunov_map.png"] = plot_lyapunov_map(
