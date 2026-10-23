@@ -1,6 +1,6 @@
 # The Hopalong "Attractor" That Isn't One
 
-### A classic computer-art map has no attractor. Here is how to see its regular and chaotic regions with a few lines of Python and numba.
+## A classic computer-art map has no attractor. Here is how to see its regular and chaotic regions with a few lines of Python and numba
 
 ![Orbits of the Hopalong map, regular orbits as nested rings in cool colours, chaotic ones in warm colours](hopalong_header.png)
 
@@ -14,7 +14,7 @@ This article walks through what the Hopalong map does, why the name is misleadin
 
 Barry Martin's Hopalong map [2] turns each point of an orbit into the next one, using three parameters a, b and c:
 
-> **[Insert image: Equations (1) and (2), the map — `eq01-02_map_combined.png`]**
+![Map](hopalong_equation_images/eq01-02_map_combined.png)
 
 Start at (0,0), repeat millions of times, plot every point. With a = 0.7, b = 0.4 and c = 0 you get a picture like the one below. (In German the map appeared as the program HÜPFER in A.K. Dewdney's column in *Spektrum der Wissenschaft* [3].)
 
@@ -52,11 +52,11 @@ For long runs the script fills the 2D histogram while the orbit runs instead of 
 
 An attractor is a set that nearby starting points are pulled toward. That requires the dynamics to shrink areas in phase space. The Hopalong map does not. Wherever it is differentiable, its Jacobian is
 
-> **[Insert image: Equation (3), the Jacobian — `eq03_jacobian.png`]**
+![Jacobian](hopalong_equation_images/eq03_jacobian.png)
 
 and its determinant is
 
-> **[Insert image: Equation (4), the determinant — `eq04_determinant.png`]**
+![Determinant](hopalong_equation_images/eq04_determinant.png)
 
 The map is also invertible: equation (2) gives the old x from the new y, and then equation (1) gives the old y. A map that is invertible and has determinant 1 preserves area. Nothing contracts, so there is nothing to attract.
 
@@ -64,11 +64,11 @@ What you see in the classic picture is the footprint of one orbit, and a differe
 
 Two more facts about the map will matter later. It keeps its form under the scaling
 
-> **[Insert image: Equation (5), the scaling symmetry — `eq05_scaling.png`]**
+![Scaling](hopalong_equation_images/eq05_scaling.png)
 
 for any scale factor s, so a and b behave like lengths and c like a length squared. And its fixed points satisfy
 
-> **[Insert image: Equation (6), the fixed-point equation — `eq06_fixed_point.png`]**
+![fixed_points](hopalong_equation_images/eq06_fixed_point.png)
 
 with y = a − x.
 
@@ -81,13 +81,13 @@ If one orbit only tells part of the story, we want a way to classify every start
 
 To estimate it, a tangent vector is pushed forward by the Jacobian (3) and renormalised at every step; the hat marks a vector rescaled to length 1:
 
-> **[Insert image: Equation (7), the tangent vector pushed forward — `eq07_tangent_push.png`]**
+![Tangent](hopalong_equation_images/eq07_tangent_push.png)
 
-> **[Insert image: Equation (8), renormalisation of the tangent vector — `eq08_renormalise.png`]**
+![Renormalise](hopalong_equation_images/eq08_renormalise.png)
 
 The largest finite-time exponent over N steps is the mean logarithmic stretching:
 
-> **[Insert image: Equation (9), the finite-time Lyapunov exponent — `eq09_lyapunov.png`]**
+![Lyapunov](hopalong_equation_images/eq09_lyapunov.png)
 
 In code, it is the same loop with a few extra lines:
 
@@ -142,7 +142,7 @@ Mixed regular and chaotic motion is the standard behaviour of area-preserving ma
 
 The full script produces all three views and the header image, with a, b, c and the iteration counts as command-line options:
 
-```
+```txt
 pip install numpy matplotlib numba
 python hopalong_phase_space.py --save
 python hopalong_phase_space.py --a 1.1 --b 0.5 --c 0.3 --iters 2000000
