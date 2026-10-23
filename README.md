@@ -137,13 +137,13 @@ The factor 3.8 was chosen so that the default parameters show the central struct
 
 **Orbit:** brightness is the log of how often the orbit visited each pixel. Black regions were never visited by this orbit.
 
-**Map**
+## Map
 
 - Left panel: colour is the finite-time exponent of the orbit that starts at that point. Dark means about 0, so regular. Bright means chaotic.
 - Right panel: the same data split at the threshold. Blue is regular, orange is chaotic, grey would mean the orbit escaped.
 - Large dark or blue blobs are islands of regular motion. The cross marks (0,0).
 
-**Portrait**
+## Portrait
 
 - Each colour is one orbit. Cool colours (cyan to magenta) are regular orbits and only encode the position of the starting point along the line, so they carry no measured value. Warm colours (yellow to red) are chaotic orbits, brighter for a larger exponent.
 - Nested rings are regular orbits circling an island. Dense warm bands are chaotic orbits filling the space between islands.
