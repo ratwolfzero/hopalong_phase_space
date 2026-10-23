@@ -1,6 +1,6 @@
 # Hopalong map: regular and chaotic regions
 
-`hopalong_phase_space.py` explores the phase space of the Hopalong map (Barry Martin) with three views of the same map:
+`hopalong_phase_space.py` explores the phase space of the Hopalong map (Barry Martin [2]) with three views of the same map:
 
 - **orbit:** one orbit from (0,0) as a density image, the classic Hopalong picture
 - **map:** a Lyapunov exponent for every starting point on a grid, classifying each as regular or chaotic
@@ -18,27 +18,26 @@ The script runs in two passes. A fast first pass finds the extents (scale, centr
 
 ## Scope
 
-The Hopalong map is often called an "attractor", but it preserves area, and mixed regular and chaotic motion is the standard behaviour of area-preserving maps. Nothing here is a new result. The script checks that behaviour numerically, mainly for one parameter set (`a=0.7`, `b=0.4`, `c=0`), and gives a way to see it. No comparison with the literature on this specific map has been made.
+The Hopalong map is due to Barry Martin [2]. In German it appeared as the program HÜPFER in A.K. Dewdney's computer column in *Spektrum der Wissenschaft* [3]. It is often called an "attractor", but it preserves area, and mixed regular and chaotic motion is the standard behaviour of area-preserving maps. Nothing here is a new result. The script checks that behaviour numerically, mainly for one parameter set (`a=0.7`, `b=0.4`, `c=0`), and gives a way to see it. The references give the sources of the map; the results here have not been compared with them or with other literature on the dynamics of the map.
 
 ## The map
 
 For parameters `a`, `b`, `c`:
 
 $$
-\begin{aligned}
-x_{n+1} &= y_n - \mathrm{sgn}(x_n)\sqrt{|bx_n-c|} \\
-y_{n+1} &= a-x_n
-\end{aligned}
+x_{n+1}=y_n-\mathrm{sign}(x_n)\sqrt{\left|bx_n-c\right|}
+$$
+
+$$
+y_{n+1}=a-x_n
 $$
 
 Where it is differentiable, its Jacobian is
 
 $$
-J(x)=
-\begin{pmatrix}
--\dfrac{b\,\mathrm{sgn}(x)\,\mathrm{sgn}(bx-c)}
-{2\sqrt{|bx-c|}} & 1 \\
--1 & 0
+J(x)=\begin{pmatrix}
+-\frac{b\cdot\mathrm{sign}(x)\cdot\mathrm{sign}(bx-c)}{2\sqrt{\left|bx-c\right|}}&1\\
+-1&0
 \end{pmatrix}
 $$
 
@@ -63,7 +62,7 @@ so `a` and `b` behave like lengths and `c` like a length squared. Orbits scale w
 The fixed points (`y=a-x`) solve
 
 $$
-2x-a+\mathrm{sgn}(x)\sqrt{|bx-c|}=0
+2x-a+\mathrm{sign}(x)\sqrt{\left|bx-c\right|}=0
 $$
 
 Because `det J=1`, a fixed point is elliptic (the centre of an island) when the upper-left entry of `J` there has absolute value below 2, and hyperbolic otherwise.
@@ -138,13 +137,13 @@ The factor 3.8 was chosen so that the default parameters show the central struct
 
 **Orbit:** brightness is the log of how often the orbit visited each pixel. Black regions were never visited by this orbit.
 
-## Map
+**Map**
 
 - Left panel: colour is the finite-time exponent of the orbit that starts at that point. Dark means about 0, so regular. Bright means chaotic.
 - Right panel: the same data split at the threshold. Blue is regular, orange is chaotic, grey would mean the orbit escaped.
 - Large dark or blue blobs are islands of regular motion. The cross marks (0,0).
 
-## Portrait
+**Portrait**
 
 - Each colour is one orbit. Cool colours (cyan to magenta) are regular orbits and only encode the position of the starting point along the line, so they carry no measured value. Warm colours (yellow to red) are chaotic orbits, brighter for a larger exponent.
 - Nested rings are regular orbits circling an island. Dense warm bands are chaotic orbits filling the space between islands.
@@ -163,7 +162,7 @@ Results for the default settings (`a=0.7`, `b=0.4`, `c=0`, 400 x 400 grid, N=800
 
 **Scaling test.** Scaling the parameters by the symmetry above gives the same picture at a different size. For `a=0.7`, `b=0.4`, `c=0` scaled by 10 and by 0.01, for `a=1.1`, `b=0.5`, `c=0.3` scaled by 3 and by 0.2, and for `a=2`, `b=1`, `c=0` scaled by 7, the window width scaled by exactly the factor, the centre and portrait line scaled with it, and the chaotic share on a 120 x 120 grid was identical.
 
-**Memory and speed.** In one test, 300 million points took about 11 s in total (3.5 s for pass 1) with a peak memory of about 200 MB.
+**Memory and speed.** In one test, 300 million points took about 11 s in total (3.5 s for pass 1) with a peak memory of about 200 MB. The histogram that is filled while the orbit runs matches `np.histogram2d` on the stored orbit: in a test with 1 million points, all 89,700 cells were identical. A version that feeds chunks of the orbit to `np.histogram2d` also keeps memory constant and gave identical counts for 20 and 100 million points, but took about five times as long (16.5 s against 3.0 s for 100 million points).
 
 Visible in the portrait but not tested: a ring of seven large islands around the centre, whose interiors stay empty because the starting line only grazes their rims, and an inner ring of about ten smaller islands.
 
@@ -178,17 +177,10 @@ Visible in the portrait but not tested: a ring of seven large islands around the
 - The square-root term has an unbounded derivative at `bx=c`. A floor of 1e-12 on the square root keeps the code finite, and smooth-map theory such as KAM is only an analogy here.
 - Orbits are computed in floating point. Exponents and fractions were checked only by varying N, threshold and window.
 
-[1]  
-**J. Lansdown and R. A. Earnshaw (eds.)**, *Computers in Art, Design and Animation*.  
- New York: Springer-Verlag, 1989.  
- e-ISBN-13: 978-1-4612-4538-4.  
+## References
 
-[2]  
-**Barry Martin**, "Graphic Potential of Recursive Functions," in *Computers in Art, Design and Animation* [1],  
-pp. 109–129.
+[1] **J. Lansdown and R. A. Earnshaw (eds.)**, *Computers in Art, Design and Animation*. New York: Springer-Verlag, 1989.
 
-[3]  
-**A.K. Dewdney**, *Psychotapeten*, algorithm *HÜPFER*, in *Spektrum der Wissenschaft: Computer Kurzweil*.  
-Spektrum der Wissenschaft Verlagsgesellschaft mbH & Co., Heidelberg, 1988.  
-(German version of *Scientific American*).  
-ISBN-10: 3922508502, ISBN-13: 978-3922508502.
+[2] **Barry Martin**, "Graphic Potential of Recursive Functions," in *Computers in Art, Design and Animation* [1], pp. 109–129.
+
+[3] **A.K. Dewdney**, *Psychotapeten*, algorithm *HÜPFER*, in *Spektrum der Wissenschaft: Computer Kurzweil*. Heidelberg: Spektrum der Wissenschaft Verlagsgesellschaft mbH & Co., 1988. (German edition of *Scientific American*.)
