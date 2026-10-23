@@ -8,7 +8,7 @@
 
 A fourth option, **header**, renders a wide version of the portrait for use as a blog header.
 
-The script runs in two passes. A fast first pass finds the extents (scale, centre, orbit box), and the second pass draws the views with them, so the framing follows `a`, `b`, `c` and the number of points without manual tuning.
+The script runs in two passes. A fast first pass finds the extents (scale, centre, orbit box), and the second pass draws the views with them, so the framing follows `a`, `b`, `c` and the number of points. How much of the structure fits the window can still need `--window-scale` (see the caveats).
 
 ![One orbit from (0,0)](hopalong_orbit.png)
 
@@ -65,7 +65,7 @@ $$
 2x-a+\mathrm{sign}(x)\sqrt{\left|bx-c\right|}=0
 $$
 
-Because `det J=1`, a fixed point is elliptic (the centre of an island) when the upper-left entry of `J` there has absolute value below 2, and hyperbolic otherwise.
+Because `det J=1`, a fixed point is elliptic (linearly stable, and typically the centre of an island) when the upper-left entry of `J` there has absolute value below 2, and hyperbolic otherwise.
 
 ## The Lyapunov exponent
 
@@ -129,7 +129,7 @@ Without `--save` the figures open in windows. The default run of all three views
 - the portrait line: from the centre towards the upper right, ending at 0.9 times the window half-size
 - the size of the density image, from the number of points
 
-**Pass 2 (render)** fills the density image while the orbit runs, so memory use does not depend on `--iters`, then computes the map, portrait and header with those extents. The portrait and header are cropped to exactly what was drawn.
+**Pass 2 (render)** fills the density image while the orbit runs, so memory use does not depend on `--iters`, then computes the map, portrait and header with those extents. The portrait is framed on what was drawn (plus a 3% margin), and the header is the same picture cropped to 16:9, with `--header-zoom` cutting in further.
 
 The factor 3.8 was chosen so that the default parameters show the central structure and the first ring of islands. It is a zoom choice, not a property of the map (see the caveats).
 
@@ -154,7 +154,7 @@ The factor 3.8 was chosen so that the default parameters show the central struct
 Results for the default settings (`a=0.7`, `b=0.4`, `c=0`, 400 x 400 grid, N=8000, threshold 0.004), in the default window x from -2.45 to 2.87 and y from -2.17 to 3.15:
 
 1. 69.8% of starting points are regular and 30.2% are chaotic. None escaped.
-2. The orbit from (0,0) has λ ≈ 0.018 (10 million iterations; 30 million gave 0.0182 and 300 million gave 0.0179, while a 2 million run gave 0.0199, so single-orbit estimates vary by about 10%). The classic picture is therefore the footprint of one chaotic orbit. The regions it leaves empty are regular islands it does not enter.
+2. The orbit from (0,0) has λ ≈ 0.018 (10 million iterations; 30 million gave 0.0182 and 300 million gave 0.0179, while a 2 million run gave 0.0199, so single-orbit estimates vary by about 10%). The classic picture is therefore the footprint of one chaotic orbit. Most of the empty holes in it are regular islands: in a check with one starting point per pixel (199 x 199 pixels inside the orbit's box), 81% of the empty pixels start regular orbits and 78% of the visited pixels start chaotic ones. The rest are regions this orbit did not visit in 10 million points or pixels that straddle an island boundary.
 3. The extent of that orbit depends on how long it runs. It was the same box (x from -0.76 to 1.02, y from -0.32 to 1.46) for 2 million to 100 million points. Between 100 and 300 million points it grew to x from -1.38 to 1.92 and y from -1.22 to 2.08, and stayed there up to one billion points. This is one run, and the exact point at which the orbit leaks out depends on floating-point details.
 4. Starting points far away, such as (50,50), (-200,30) and (1000,-1000), gave λ below 3e-4, which is regular. The chaotic share is 31.3% for a window twice the default size and 20.0% for four times, so the percentage depends on the window.
 5. Exponents inside the chaotic region vary, from about 0.01 to about 0.03 in the figure. The script does not explain why.
@@ -169,7 +169,9 @@ Visible in the portrait but not tested: a ring of seven large islands around the
 ## Caveats
 
 - The structure has no outer edge to detect. In a coarse survey with thresholds of 0.004 and 0.008, chaotic orbits were still found at every probe size tried (up to 64 units from the origin). The window is therefore a zoom choice around the fixed point, and `--window-scale` changes it.
-- Only one parameter set was studied in detail. The automatic framing was checked by eye on six parameter sets (including a hyperbolic centre and a window of about 400 units across), but their pictures were not analysed, and nothing here says how the picture changes with `a`, `b`, `c`.
+- Only one parameter set was studied in detail. The automatic framing was checked by eye on eight parameter sets (six with a fixed point, including a hyperbolic centre and a window of about 400 units across, and two without one), and three more sets without a fixed point ran without errors. The pictures were not analysed, and nothing here says how the picture changes with `a`, `b`, `c`.
+- The framing is exact under the scaling symmetry but not matched to the size of the structure. Where the orbit from (0,0) is much larger than `L` (for `a=1`, `b=3`, `c=5` it spans about ±90 against a window of about ±11), the map shows only the central part of the structure, and the portrait and header are dominated by faint far-reaching orbits. In such cases use `--window-scale`, `--xlim`, `--ylim`, `--start` and `--end`.
+- About 47% of random parameter sets (3,000 sets with `a` and `b` in [-5, 5] and `c` in [-25, 25] or 0) have no real fixed point. The centre then falls back to the middle of the orbit's box, which depends on the run length when the orbit is large, so it is less robust.
 - The percentages depend on the window and describe the plotted region, not the whole plane.
 - The extent of the orbit from (0,0) depends on `--iters` (see item 3), so the density image is framed on the full run. A very long run can show a much larger region than a short one.
 - The exponent is finite-time. Chaotic orbits that stick near islands can look regular over N steps, so the chaotic share can be under-counted near island boundaries.
