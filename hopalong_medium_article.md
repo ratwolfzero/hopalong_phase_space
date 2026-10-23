@@ -150,7 +150,7 @@ python hopalong_phase_space.py --a 1.1 --b 0.5 --c 0.3 --iters 2000000
 
 The script runs in two passes. A quick first pass finds the length scale of the map from a, b and c, the centre of its structure (the map's fixed point) and the exact extent of the orbit from (0,0). The second pass draws the three views with that framing, so you can change a, b, c and the number of points and still get a framed picture. How much of the structure fits the window depends on the parameters, though: the window is 3.8 length scales around the fixed point (or around the middle of the orbit if there is none), which is a zoom choice, and for maps with much larger orbits you will want `--window-scale`.
 
-Code and README: [GitHub repository](https://github.com/YOUR-USER/YOUR-REPO)
+Code and README: [GitHub repository](https://github.com/ratwolfzero/hopalong_phase_space)
 
 A pretty picture is a good way into a real question. Here the question is how a map that preserves area still produces such rich structure, and the answer is that its phase space is not one thing but a patchwork of regular and chaotic regions. The natural next step is to ask how that patchwork changes as the parameters move.
 
