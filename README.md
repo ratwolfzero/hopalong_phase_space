@@ -27,6 +27,7 @@ For parameters `a`, `b`, `c`:
 $$
 x_{n+1}=y_n-\mathrm{sign}(x_n)\sqrt{\left|bx_n-c\right|}
 $$
+
 $$
 y_{n+1}=a-x_n
 $$
