@@ -140,9 +140,9 @@ def smooth_histogram(histogram, sigma=1.5):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--a", type=float, default=1.7)
+    parser.add_argument("--a", type=float, default=0.7)
     parser.add_argument("--b", type=float, default=0.4)
-    parser.add_argument("--c", type=float, default=0.1)
+    parser.add_argument("--c", type=float, default=0)
     parser.add_argument("--iters", type=int, default=10_000_000,
                         help="number of plotted points (default: 10,000,000)")
     parser.add_argument("--skip", type=int, default=500,
