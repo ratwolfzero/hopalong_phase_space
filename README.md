@@ -101,6 +101,7 @@ python hopalong_phase_space.py --save                  # orbit, map and portrait
 python hopalong_phase_space.py --which header --save   # 1600 x 900 header image
 python hopalong_phase_space.py --a 1.1 --b 0.5 --c 0.3 --iters 2000000
 python hopalong_phase_space.py --a 2 --b 1 --survey-only   # pass 1 only: print the extents
+python hopalong_orbit.py --save                         # standalone classic orbit renderer
 ```
 
 Without `--save` the figures open in windows. The default run of all three views took about 35 s on a single core here, including compilation. The map is the slow part and runs in parallel across cores. The main options:
@@ -117,6 +118,24 @@ Without `--save` the figures open in windows. The default run of all three views
 - `--portrait-orbits`, `--portrait-iters`: number of orbits and points per orbit
 - `--header-size`, `--header-zoom`: header pixels (default 1600 900) and crop (default 1.4)
 - `--outdir`: folder for the PNG files
+
+### Standalone classic orbit
+
+`hopalong_orbit.py` extracts the classic orbit image from the larger phase-space
+script. It runs two compiled passes: the first finds the orbit bounds without
+storing points, and the second repeats the orbit while incrementing the 2D
+histogram in place. It does not calculate a Lyapunov exponent or allocate
+arrays proportional to the iteration count.
+
+```bash
+python hopalong_orbit.py
+python hopalong_orbit.py --iters 100000000 --bins 1200 --save
+```
+
+The standalone script uses the same default parameters (`a=0.7`, `b=0.4`,
+`c=0`) and transient (`--skip 500`); `--iters` selects the plotted points,
+`--bins` sets the longer histogram dimension, and `--outdir` chooses where
+`hopalong_orbit.png` is saved.
 
 ## How the framing works
 
