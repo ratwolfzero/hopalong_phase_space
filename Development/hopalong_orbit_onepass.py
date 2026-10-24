@@ -201,7 +201,7 @@ def parse_args(argv=None):
     parser.add_argument("--a", type=float, default=0.7)
     parser.add_argument("--b", type=float, default=0.4)
     parser.add_argument("--c", type=float, default=0)
-    parser.add_argument("--iters", type=int, default=10_000_000_000,
+    parser.add_argument("--iters", type=int, default=1_000_000_000,
                         help="number of plotted points (default: 10,000,000)")
     parser.add_argument("--skip", type=int, default=500,
                         help="discarded transient steps (default: 500)")
