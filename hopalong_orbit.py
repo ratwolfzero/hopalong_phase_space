@@ -117,10 +117,10 @@ def histogram_layout(bounds, bins, n):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--a", type=float, default=0.7)
+    parser.add_argument("--a", type=float, default=1.7)
     parser.add_argument("--b", type=float, default=0.4)
-    parser.add_argument("--c", type=float, default=0.0)
-    parser.add_argument("--iters", type=int, default=10_000_000_000,
+    parser.add_argument("--c", type=float, default=0.1)
+    parser.add_argument("--iters", type=int, default=10_000_000,
                         help="number of plotted points (default: 10,000,000)")
     parser.add_argument("--skip", type=int, default=500,
                         help="discarded transient steps (default: 500)")
@@ -170,7 +170,7 @@ def main(argv=None):
           f"{outside:,} outside bounds ({render_seconds:.2f}s)")
 
     fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
-    ax.imshow(np.log1p(histogram), origin="lower", cmap="hot",
+    ax.imshow(np.log1p(histogram), origin="lower", cmap="magma",
               extent=extent, interpolation="nearest")
     ax.set_aspect("equal")
     ax.set_title(f"Hopalong orbit: a={args.a}, b={args.b}, c={args.c}\n"
