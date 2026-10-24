@@ -113,9 +113,6 @@ than the requested number of points may then be plotted.
 - **Pilot overhead.** The 2,000-step pilot repeats those recurrence
   calculations in the main pass. For very short runs, this overhead may be
   noticeable.
-- **Default/help-text mismatch in the script.** The code sets `--iters` to
-  `10,000,000,000`, while its help text says `10,000,000`. Set `--iters`
-  explicitly when the exact run length matters.
 
 ## Use cases
 
