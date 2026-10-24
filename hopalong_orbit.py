@@ -2,10 +2,12 @@
 
 The first pass finds the orbit bounds without storing points. The second pass
 repeats the orbit and fills the histogram directly. Memory use is therefore
-independent of the number of iterations.
+independent of the number of iterations. Use --smooth to display a Gaussian-
+smoothed version of the histogram.
 
 Usage:
     python hopalong_orbit.py
+    python hopalong_orbit.py --smooth
     python hopalong_orbit.py --save
     python hopalong_orbit.py --a 1.1 --b 0.5 --c 0.3 --iters 2000000 --save
 """
@@ -114,6 +116,27 @@ def histogram_layout(bounds, bins, n):
     return extent, shape
 
 
+def smooth_histogram(histogram, sigma=1.5):
+    """Apply a separable Gaussian filter, with sigma measured in pixels."""
+    radius = int(np.ceil(4 * sigma))
+    offsets = np.arange(-radius, radius + 1)
+    kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
+    kernel /= kernel.sum()
+
+    smoothed = histogram.astype(np.float64)
+    for axis in (0, 1):
+        pad_width = [(0, 0), (0, 0)]
+        pad_width[axis] = (radius, radius)
+        padded = np.pad(smoothed, pad_width, mode="constant")
+        filtered = np.zeros_like(smoothed)
+        for index, weight in enumerate(kernel):
+            source = [slice(None), slice(None)]
+            source[axis] = slice(index, index + smoothed.shape[axis])
+            filtered += weight * padded[tuple(source)]
+        smoothed = filtered
+    return smoothed
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -126,6 +149,8 @@ def parse_args(argv=None):
                         help="discarded transient steps (default: 500)")
     parser.add_argument("--bins", type=int,
                         help="pixels on the longer side (default: scales with --iters)")
+    parser.add_argument("--smooth", action="store_true",
+                        help="Gaussian-smooth the histogram (sigma: 1.5 pixels)")
     parser.add_argument("--save", action="store_true",
                         help="save hopalong_orbit.png instead of showing it")
     parser.add_argument("--outdir", default=".",
@@ -169,12 +194,15 @@ def main(argv=None):
     print(f"pass 2: histogram {nbx}x{nby}, {points:,} points, "
           f"{outside:,} outside bounds ({render_seconds:.2f}s)")
 
+    density = smooth_histogram(histogram) if args.smooth else histogram
+    density_label = ("log Gaussian-smoothed visit density" if args.smooth
+                     else "log visit density")
     fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
-    ax.imshow(np.log1p(histogram), origin="lower", cmap="magma",
+    ax.imshow(np.log1p(density), origin="lower", cmap="magma",
               extent=extent, interpolation="nearest")
     ax.set_aspect("equal")
     ax.set_title(f"Hopalong orbit: a={args.a}, b={args.b}, c={args.c}\n"
-                 f"{points:,} points, log visit density")
+                 f"{points:,} points, {density_label}")
     ax.set_xlabel("x")
     ax.set_ylabel("y")
 

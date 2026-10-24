@@ -130,12 +130,16 @@ arrays proportional to the iteration count.
 ```bash
 python hopalong_orbit.py
 python hopalong_orbit.py --iters 100000000 --bins 1200 --save
+python hopalong_orbit.py --smooth --save
 ```
 
 The standalone script uses the same default parameters (`a=0.7`, `b=0.4`,
 `c=0`) and transient (`--skip 500`); `--iters` selects the plotted points,
 `--bins` sets the longer histogram dimension, and `--outdir` chooses where
-`hopalong_orbit.png` is saved.
+`hopalong_orbit.png` is saved. By default it displays the log-scaled visit
+histogram; `--smooth` applies a separable Gaussian filter to the counts before
+the log transform (sigma 1.5 pixels). This smooths the histogram without
+storing orbit points and is an approximation to KDE, not a direct point-wise KDE.
 
 ## How the framing works
 
