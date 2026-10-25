@@ -273,10 +273,9 @@ def parse_args(argv=None):
     parser.add_argument("--skip", type=int, default=500,
                         help="discarded transient steps (default: 500)")
     parser.add_argument("--bins", type=int,
-                        help="side of the square count grid (default: twice the "
-                             "old heuristic, at most 2048). Because the grid cell "
-                             "size only doubles, the attractor ends up covering "
-                             "between about 50%% and 100%% of the grid side.")
+                        help="side of the square count grid; larger values usually "
+                             "give finer cells but use memory proportional to bins^2 "
+                             "(default: scales with --iters, at most 2048)")
     parser.add_argument("--smooth", action="store_true",
                         help="Gaussian-smooth the histogram (sigma: 1.5 pixels)")
     parser.add_argument("--save", action="store_true",

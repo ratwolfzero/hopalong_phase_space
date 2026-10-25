@@ -88,6 +88,27 @@ applies a separable Gaussian filter with sigma 1.5 cells before taking the
 logarithm. `--save` writes `hopalong_orbit.png` to the selected output
 directory instead of opening a window.
 
+### Tuning resolution with `--bins`
+
+Use `--bins` to set the side length of the square count grid. For example:
+
+```bash
+python hopalong_orbit_onepass.py --bins 4096 --save
+```
+
+Larger values generally produce a smaller final `cell` width in the status
+output, meaning finer spatial resolution. The relationship is not perfectly
+linear: the grid only doubles its cell width when the orbit outgrows it, so
+the final cell width also depends on the orbit's coordinate range. Compare
+`cell` values for the same parameters and iteration count; a smaller value
+means finer bins.
+
+The memory cost grows quadratically with `--bins`. The two 64-bit count grids
+alone use about `16 * bins * bins` bytes: approximately 64 MiB at 2048 and
+256 MiB at 4096, before temporary arrays used for plotting or smoothing. The
+option is rounded up to an even grid side internally because the grid growth
+merges cells in 2x2 blocks.
+
 ## Result
 
 The result is a two-dimensional image of how often the orbit visits each
@@ -168,4 +189,6 @@ python hopalong_orbit_onepass.py --a 1.1 --b 0.5 --c 0.3 --iters 2000000 --save
 
 `--bins` sets the square grid side length. If omitted, the script derives it
 from `--iters` and caps it at 2,048; the resulting side length is made even
-for the 2x2 merge operation. `--outdir` selects where the PNG is saved.
+for the 2x2 merge operation. Increase it for finer resolution at greater
+memory cost; check the reported `cell` value to compare the actual final
+resolution. `--outdir` selects where the PNG is saved.
