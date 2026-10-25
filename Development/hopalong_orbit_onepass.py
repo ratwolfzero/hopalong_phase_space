@@ -1,11 +1,13 @@
 """Render the classic Hopalong orbit as an on-the-fly density histogram (one pass).
 
 No survey pass is needed. The histogram lives on a dyadic grid: whenever a
-point leaves the grid, the cell size is doubled and 2x2 blocks of counts are
-merged (the count pyramid's marginalisation property), so the counts stay
-exact. Memory use is independent of the number of iterations. A tiny pilot
-orbit (a few thousand steps) only picks the starting size; correctness does
-not depend on it. Use --smooth to display a Gaussian-smoothed histogram.
+point leaves the grid, the block of occupied counts is shifted if it still fits
+at the current cell size, and otherwise merged 2x2 into half the resolution
+(the count pyramid's marginalisation property), so the counts stay exact.
+Memory use is independent of the number of iterations. The first few thousand
+points are buffered (not recomputed) only to pick the starting cell size;
+correctness does not depend on it. Use --smooth to display a Gaussian-smoothed
+histogram.
 
 Usage:
     python hopalong_orbit_onepass.py
@@ -22,36 +24,8 @@ import numpy as np
 from numba import njit
 
 ESCAPE = 1e6
-PILOT_STEPS = 2000
-
-
-@njit(cache=True)
-def pilot_bounds(a, b, c, steps):
-    """Bounds of the first `steps` orbit points; only used for the start size."""
-    x = 0.0
-    y = 0.0
-    xmin = 1e300
-    xmax = -1e300
-    ymin = 1e300
-    ymax = -1e300
-    for _ in range(steps):
-        old_x = x
-        delta = b * old_x - c
-        if old_x > 0.0:
-            sign_x = 1.0
-        elif old_x < 0.0:
-            sign_x = -1.0
-        else:
-            sign_x = 0.0
-        x = y - sign_x * np.sqrt(abs(delta))
-        y = a - old_x
-        if abs(x) > ESCAPE or abs(y) > ESCAPE:
-            break
-        xmin = min(xmin, x)
-        xmax = max(xmax, x)
-        ymin = min(ymin, y)
-        ymax = max(ymax, y)
-    return xmin, xmax, ymin, ymax
+WARMUP = 4096  # points buffered to choose the starting cell size
+H_MIN = 2.0 ** -32  # finest cell size; all cell sizes are H_MIN * 2**k
 
 
 @njit(cache=True)
@@ -87,79 +61,172 @@ def fill_until_outside(hist, a, b, c, i, total, skip, x, y, x0, y0, inv_h):
 
 
 @njit(cache=True)
-def coarsen(hist, left, down):
-    """Merge 2x2 blocks into half the resolution on a grid of twice the span.
-
-    The old grid ends up in one half of the new one, on the side opposite to
-    the direction in which the grid is extended.
-    """
+def occupied_box(hist):
+    """Index bounds (ix0, ix1, iy0, iy1) of the non-zero cells; one cheap pass."""
     size = hist.shape[0]
-    half = size // 2
-    ox = half if left else 0
-    oy = half if down else 0
-    out = np.zeros_like(hist)
+    col = np.zeros(size, dtype=np.int64)
+    iy0 = size
+    iy1 = -1
     for iy in range(size):
+        row = np.int64(0)
         for ix in range(size):
             v = hist[iy, ix]
-            if v:
-                out[oy + (iy >> 1), ox + (ix >> 1)] += v
-    return out
+            row |= v
+            col[ix] |= v
+        if row != 0:
+            if iy0 == size:
+                iy0 = iy
+            iy1 = iy
+    ix0 = size
+    ix1 = -1
+    for ix in range(size):
+        if col[ix] != 0:
+            if ix0 == size:
+                ix0 = ix
+            ix1 = ix
+    return ix0, ix1, iy0, iy1
 
 
 @njit(cache=True)
-def orbit_histogram(a, b, c, n, skip, size, cx, cy, span0):
+def move_block(src, dst, ix0, ix1, iy0, iy1, dx, dy):
+    """Translate the occupied block of src into the (all-zero) dst; clear it in src."""
+    for iy in range(iy0, iy1 + 1):
+        dst[iy + dy, ix0 + dx:ix1 + 1 + dx] = src[iy, ix0:ix1 + 1]
+    src[iy0:iy1 + 1, ix0:ix1 + 1] = 0
+
+
+@njit(cache=True)
+def merge_block(src, dst, ix0, ix1, iy0, iy1, dx, dy):
+    """Merge 2x2 blocks of the occupied block into dst, translated; clear it in src."""
+    for oy in range(iy0 // 2, iy1 // 2 + 1):
+        for ox in range(ix0 // 2, ix1 // 2 + 1):
+            dst[oy + dy, ox + dx] = (src[2 * oy, 2 * ox] + src[2 * oy, 2 * ox + 1]
+                                     + src[2 * oy + 1, 2 * ox]
+                                     + src[2 * oy + 1, 2 * ox + 1])
+    src[iy0:iy1 + 1, ix0:ix1 + 1] = 0
+
+
+@njit(cache=True)
+def make_room(hist, spare, x0, y0, h, x, y):
+    """Reframe the grid so that all counted points and the point (x, y) fit.
+
+    If the occupied block plus the new point fit at the current cell size, the
+    counts are only translated, which loses no resolution. Otherwise the cell
+    size is doubled (2x2 merge) until they fit. The block is always centred, so
+    there is room on both sides. Every cell size is a power of two times H_MIN,
+    so old and new cell boundaries stay aligned and the counts stay exact.
+    `spare` is an all-zero array of the same shape; the two arrays are swapped.
+    Returns (hist, spare, x0, y0, h, doublings).
+    """
+    size = hist.shape[0]
+    ix0, ix1, iy0, iy1 = occupied_box(hist)
+    grows = 0
+    while True:
+        px = int(np.floor((x - x0) / h))
+        py = int(np.floor((y - y0) / h))
+        lox = min(ix0, px)
+        hix = max(ix1, px)
+        loy = min(iy0, py)
+        hiy = max(iy1, py)
+        if hix - lox < size and hiy - loy < size:
+            dx = (size - (hix - lox + 1)) // 2 - lox
+            dy = (size - (hiy - loy + 1)) // 2 - loy
+            move_block(hist, spare, ix0, ix1, iy0, iy1, dx, dy)
+            return spare, hist, x0 - dx * h, y0 - dy * h, h, grows
+        # Does not fit: halve the resolution, with the old block centred.
+        dx = (size - (ix1 // 2 - ix0 // 2 + 1)) // 2 - ix0 // 2
+        dy = (size - (iy1 // 2 - iy0 // 2 + 1)) // 2 - iy0 // 2
+        merge_block(hist, spare, ix0, ix1, iy0, iy1, dx, dy)
+        tmp = hist
+        hist = spare
+        spare = tmp
+        ix0 = ix0 // 2 + dx
+        ix1 = ix1 // 2 + dx
+        iy0 = iy0 // 2 + dy
+        iy1 = iy1 // 2 + dy
+        x0 -= dx * 2.0 * h
+        y0 -= dy * 2.0 * h
+        h *= 2.0
+        grows += 1
+
+
+@njit(cache=True)
+def orbit_histogram(a, b, c, n, skip, size):
     """Single-pass visit-count histogram on a size x size dyadic grid.
 
-    The grid starts with span `span0` centred on (cx, cy) and doubles its span
-    (halving the resolution) whenever a point falls outside. size must be even.
-    Returns (hist, x0, y0, h, grows, escaped) with (x0, y0) the lower-left
-    corner of the grid and h the final cell size.
+    The first WARMUP plotted points are buffered to choose the starting cell
+    size; from then on the grid adapts whenever a point falls outside. size
+    must be even. Returns (hist, x0, y0, h, grows, escaped) with (x0, y0) the
+    lower-left corner of the grid and h the final cell size.
     """
-    hist = np.zeros((size, size), dtype=np.int64)
-    h = span0 / size
-    x0 = cx - 0.5 * span0
-    y0 = cy - 0.5 * span0
     total = n + skip
+    buf_x = np.empty(WARMUP)
+    buf_y = np.empty(WARMUP)
+    nbuf = 0
     i = 0
     x = 0.0
     y = 0.0
-    grows = 0
     escaped = False
-    while True:
+    while i < total and nbuf < WARMUP:
+        old_x = x
+        delta = b * old_x - c
+        if old_x > 0.0:
+            sign_x = 1.0
+        elif old_x < 0.0:
+            sign_x = -1.0
+        else:
+            sign_x = 0.0
+        x = y - sign_x * np.sqrt(abs(delta))
+        y = a - old_x
+        if abs(x) > ESCAPE or abs(y) > ESCAPE:
+            escaped = True
+            break
+        if i >= skip:
+            buf_x[nbuf] = x
+            buf_y[nbuf] = y
+            nbuf += 1
+        i += 1
+
+    hist = np.zeros((size, size), dtype=np.int64)
+    if nbuf == 0:
+        return hist, 0.0, 0.0, H_MIN, 0, escaped
+
+    # Starting grid: smallest cell size that fits the buffered points, centred.
+    xmin = buf_x[:nbuf].min()
+    xmax = buf_x[:nbuf].max()
+    ymin = buf_y[:nbuf].min()
+    ymax = buf_y[:nbuf].max()
+    extent = max(xmax - xmin, ymax - ymin)
+    h = H_MIN
+    while extent / h >= size - 1:
+        h *= 2.0
+    lo_x = int(np.floor(xmin / h))
+    lo_y = int(np.floor(ymin / h))
+    wid_x = int(np.floor(xmax / h)) - lo_x + 1
+    wid_y = int(np.floor(ymax / h)) - lo_y + 1
+    x0 = (lo_x - (size - wid_x) // 2) * h
+    y0 = (lo_y - (size - wid_y) // 2) * h
+    for k in range(nbuf):
+        fx = min(max(int((buf_x[k] - x0) / h), 0), size - 1)
+        fy = min(max(int((buf_y[k] - y0) / h), 0), size - 1)
+        hist[fy, fx] += 1
+
+    spare = np.zeros((size, size), dtype=np.int64)
+    grows = 0
+    while not escaped:
         status, i, x, y = fill_until_outside(
             hist, a, b, c, i, total, skip, x, y, x0, y0, 1.0 / h)
         if status == 2:
             escaped = True
         if status != 1:
             break
-        fx = (x - x0) / h
-        fy = (y - y0) / h
-        while not (0.0 <= fx < size and 0.0 <= fy < size):
-            left = fx < 0.0
-            down = fy < 0.0
-            hist = coarsen(hist, left, down)
-            if left:
-                x0 -= size * h
-            if down:
-                y0 -= size * h
-            h *= 2.0
-            fx = (x - x0) / h
-            fy = (y - y0) / h
-            grows += 1
-        hist[int(fy), int(fx)] += 1
+        hist, spare, x0, y0, h, g = make_room(hist, spare, x0, y0, h, x, y)
+        grows += g
+        fx = min(max(int((x - x0) / h), 0), size - 1)
+        fy = min(max(int((y - y0) / h), 0), size - 1)
+        hist[fy, fx] += 1
         i += 1
     return hist, x0, y0, h, grows, escaped
-
-
-def start_grid(a, b, c):
-    """Centre and span of the starting grid, from a tiny pilot orbit."""
-    xmin, xmax, ymin, ymax = pilot_bounds(a, b, c, PILOT_STEPS)
-    if xmax < xmin:  # escaped immediately
-        return 0.0, 0.0, 4.0
-    span = max(xmax - xmin, ymax - ymin) * 1.05
-    if not np.isfinite(span) or span <= 0.0:
-        span = 4.0
-    return 0.5 * (xmin + xmax), 0.5 * (ymin + ymax), span
 
 
 def crop_to_occupied(hist, x0, y0, h):
@@ -209,7 +276,7 @@ def parse_args(argv=None):
                         help="side of the square count grid (default: twice the "
                              "old heuristic, at most 2048). Because the grid cell "
                              "size only doubles, the attractor ends up covering "
-                             "roughly 40-100%% of the grid side.")
+                             "between about 50%% and 100%% of the grid side.")
     parser.add_argument("--smooth", action="store_true",
                         help="Gaussian-smooth the histogram (sigma: 1.5 pixels)")
     parser.add_argument("--save", action="store_true",
@@ -237,9 +304,8 @@ def main(argv=None):
     size += size % 2  # the dyadic merge needs an even grid side
 
     started = time.perf_counter()
-    cx, cy, span0 = start_grid(args.a, args.b, args.c)
     hist, x0, y0, h, grows, escaped = orbit_histogram(
-        args.a, args.b, args.c, args.iters, args.skip, size, cx, cy, span0)
+        args.a, args.b, args.c, args.iters, args.skip, size)
     seconds = time.perf_counter() - started
     points = int(hist.sum())
     if points == 0:

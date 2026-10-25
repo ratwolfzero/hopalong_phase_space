@@ -1,7 +1,7 @@
 # One-pass Hopalong orbit density plot
 
 This script renders the classic Hopalong map as a visit-density image. It
-streams the orbit into a fixed-size histogram and expands the represented
+streams the orbit into a fixed-size histogram and adapts the represented
 coordinate range when necessary, rather than storing every orbit point or
 making a full preliminary pass to discover the bounds.
 
@@ -12,7 +12,8 @@ The goal is to plot a long orbit with:
 - Memory bounded by the histogram dimensions, rather than the number of
   iterations.
 - Exact integer visit counts at the histogram's **final** cell resolution.
-- Automatic coverage when the orbit moves beyond the current grid.
+- Automatic coverage when the orbit moves beyond the current grid, at the
+  finest cell size that still fits the whole orbit.
 - A useful density visualization, optionally Gaussian-smoothed.
 
 The implementation uses NumPy arrays, Matplotlib, and Numba. Save the script
@@ -34,37 +35,50 @@ y = a - old_x
 The default parameters are `a=0.7`, `b=0.4`, and `c=0`. The first `--skip`
 steps are treated as a transient and are not added to the histogram.
 
-### Starting grid and pilot
+### Starting grid
 
-`pilot_bounds` runs a short orbit of 2,000 steps to estimate a starting
-center and square span. This is a sizing heuristic only: later points are
-still checked, and the grid grows whenever a point falls outside it.
+The first 4,096 plotted points are held in a small buffer (64 KB). Their
+bounding box selects the starting cell size: the smallest power of two times
+`H_MIN = 2**-32` at which the box fits the grid. The grid is centred on the
+box, the buffered points are binned, and the orbit simply continues from where
+it was. No recurrence step is computed twice, and there is no separate pilot
+orbit.
 
-The pilot is not retained as histogram data. The main pass starts the orbit
-again from `(0, 0)`, so the initial pilot steps are computed twice. The
-approach avoids a full bounds survey, but is not literally a single
-evaluation of every recurrence step.
+This is a sizing heuristic only. Later points are still checked, and the grid
+is reframed whenever a point falls outside it. The attractor's extent usually
+keeps growing with the number of points, so the buffer cannot predict the final
+size; it only avoids a burst of cheap-but-pointless regridding at the start.
 
 ### Streaming histogram and dyadic growth
 
 The histogram is a square `size x size` array of signed 64-bit integer
 counts. A point inside the current bounds is mapped to a cell by scaling its
-coordinates by the inverse cell width and converting to integer indices.
+coordinates by the inverse cell width and converting to integer indices. The
+hot loop does nothing else: it carries no bookkeeping of its own.
 
-When a plotted point falls outside the grid:
+When a plotted point falls outside the grid, the grid is reframed:
 
-1. Existing counts are merged from each 2x2 block into one cell, using
-   integer addition.
-2. The grid's cell width doubles, so its coordinate span doubles while its
-   number of cells per side remains constant.
-3. The old grid is positioned in the half opposite the direction of growth.
-   The point that triggered growth is then binned, and orbit processing
-   resumes.
+1. The occupied block of cells is located with one pass over the array.
+2. If the occupied block **and** the new point still fit at the current cell
+   size, the counts are only **translated**, so the block is centred. Nothing
+   is merged and no resolution is lost.
+3. Otherwise the cell width is doubled: each 2x2 block of counts is merged into
+   one cell by integer addition, and the merged block is centred in the grid.
+   This repeats until everything fits.
+4. The triggering point is binned and orbit processing resumes.
 
-The merge preserves the total count and is an exact aggregation onto the
-coarser grid. Earlier points are not lost or approximated in count. However,
-their original fine-cell locations cannot be recovered after merging: all
-points are ultimately represented at the final, coarser resolution.
+Centring leaves room on both sides, so a reframe is rarely needed again soon.
+Only the occupied block is read, written and cleared, using two preallocated
+arrays that swap roles, so a reframe costs a few milliseconds at 2048 x 2048.
+
+All cell widths are `H_MIN * 2**k`, so old and new cell boundaries stay
+aligned: translating and 2x2 merging are exact aggregations onto the new
+lattice. Earlier points are not lost or approximated in count. However, their
+original fine-cell locations cannot be recovered after merging: all points are
+ultimately represented at the final, coarser resolution.
+
+Because the grid doubles only when the occupied region no longer fits, the
+final occupied region covers between about 50% and 100% of the grid side.
 
 ### Output image
 
@@ -84,35 +98,42 @@ On normal completion, the script reports the number of binned points, grid
 size, final cell width, number of grid doublings, elapsed time, and occupied
 image dimensions and coordinate extent. If the orbit reaches the escape
 threshold, processing stops and the report indicates that it escaped; fewer
-than the requested number of points may then be plotted.
+than the requested number of points may then be plotted. If it escapes before
+any point is plotted, the script exits with a message.
 
 ## Caveats
 
 - **Resolution decreases on growth.** Each doubling of the coordinate span
-  also doubles the cell width. This preserves a fixed-size grid, but a
-  trajectory with a much larger range than the pilot predicted will have a
-  coarser final image.
+  also doubles the cell width. This preserves a fixed-size grid, but an orbit
+  whose extent keeps growing with the number of points ends up with a coarser
+  final image the longer it runs. The cell width is the smallest power of two
+  at which the whole occupied region fits.
 - **Counts are exact only for the final bins.** Integer merges preserve visit
   totals, but do not preserve sub-cell positions or allow a later
   higher-resolution reconstruction.
 - **Floating-point bin edges.** Orbit coordinates and grid-to-cell mapping
   use floating-point arithmetic. Points extremely close to a cell boundary
   can be assigned to either neighboring cell due to rounding.
-- **Growth has a cost.** Each growth allocates and scans another full grid.
-  Usually this is infrequent, but a trajectory that repeatedly expands the
-  range can incur additional time and temporary memory.
-- **Memory is bounded by grid size, not necessarily small.** The count array
-  uses approximately `8 * bins * bins` bytes, with additional temporary
-  memory during regridding and for plotting/smoothing.
+- **Reframing has a small fixed cost.** Each reframe scans the grid once and
+  moves only the occupied block. Typical runs need zero to a few dozen
+  reframes, and heavy-tailed orbits somewhat more; the total is on the order of
+  0.1 s at 2048 x 2048 and does not scale with the number of iterations.
+- **Finer images touch more memory.** A sharper final grid has more occupied
+  cells, so the scattered histogram updates miss the cache a little more often.
+  Measured on one machine, this was a few percent, and it is the price of the
+  better resolution rather than of the reframing code.
+- **Memory is bounded by grid size, not necessarily small.** Two count arrays
+  are kept (about `16 * bins * bins` bytes in total), plus temporary memory for
+  plotting/smoothing.
+- **Finest cell size.** Cells never get finer than `2**-32`. This only matters
+  for orbits whose entire extent is below about `5e-7`.
 - **Escape guard.** The orbit stops if either coordinate's absolute value
   exceeds `1e6`. This is a safety cutoff, not a general mathematical test
   that every parameter choice produces a bounded orbit.
 - **Smoothing changes the displayed density.** Gaussian smoothing is a
-  visualization step, not part of the visit counts. Zero padding can reduce
-  smoothed values near the image boundary.
-- **Pilot overhead.** The 2,000-step pilot repeats those recurrence
-  calculations in the main pass. For very short runs, this overhead may be
-  noticeable.
+  visualization step, not part of the visit counts. Its sigma is measured in
+  cells, so the apparent blur depends on the final cell size. Zero padding can
+  reduce smoothed values near the image boundary.
 
 ## Use cases
 
