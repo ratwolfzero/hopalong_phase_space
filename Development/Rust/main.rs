@@ -217,7 +217,17 @@ fn prefetch(p: *const i64) {
     unsafe {
         core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(p as *const i8);
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: PRFM is only a hint; it cannot fault, whatever the address.
+    unsafe {
+        // PSTL1KEEP: prefetch for store into L1, since the line is about to be incremented.
+        core::arch::asm!(
+            "prfm pstl1keep, [{0}]",
+            in(reg) p,
+            options(nostack, readonly, preserves_flags),
+        );
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     let _ = p;
 }
 
